@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: multi-bot-ai-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # set manually in Render dashboard (Supabase URL)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: OLLAMA_BASE_URL
+        value: http://localhost:11434
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_GROUP_CHAT_ID
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: NEWS_API_KEY
+        sync: false
+      - key: OWNER_TELEGRAM_ID
+        sync: false
+      - key: APPROVAL_TTL_SECONDS
+        value: "3600"
+      - key: MAX_HISTORY
+        value: "50"
+      - key: LLM_MAX_RETRIES
+        value: "3"
+      # Git deployer — for /bot coding push-to-deploy
+      - key: GIT_REMOTE
+        sync: false          # set to https://<token>@github.com/user/repo.git
+      - key: GIT_BRANCH
+        value: main
+      - key: REPO_ROOT
+        value: /app
+      # No REDIS_URL — falls back to in-memory automatically
