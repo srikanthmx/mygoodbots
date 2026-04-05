@@ -271,6 +271,7 @@ async def telegram_webhook(request: Request) -> dict:
             session_id=session_id,
             bot_id=tg_message.bot_id,
             message=tg_message.text,
+            sender_id=tg_message.sender_id,
         )
     except Exception as exc:
         logger.error("Dispatch error for Telegram update: %s", exc)

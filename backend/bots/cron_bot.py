@@ -80,7 +80,11 @@ class CronBot(BaseBot):
         if OWNER_TELEGRAM_ID == 0:
             logger.warning("OWNER_TELEGRAM_ID not set — CronBot is open to everyone")
             return True
-        # Check Redis for the sender_id stored by the webhook handler
+        # Check sender_id stored in session metadata by the dispatcher
+        sender_id = context.metadata.get("sender_id")
+        if sender_id is not None and int(sender_id) == OWNER_TELEGRAM_ID:
+            return True
+        # Fallback: Redis lookup (if available)
         if self._redis:
             try:
                 stored = await self._redis.get(f"sender:{context.session_id}")
@@ -88,7 +92,7 @@ class CronBot(BaseBot):
                     return True
             except Exception:
                 pass
-        # Fallback: owner's private chat session
+        # Last resort: owner's private chat session
         return context.session_id == f"tg:{OWNER_TELEGRAM_ID}"
 
     def _parse_schedule(self, schedule_str: str) -> tuple[Any, str]:

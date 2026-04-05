@@ -52,6 +52,7 @@ class Dispatcher:
         session_id: str,
         bot_id: str,
         message: str,
+        sender_id: int | None = None,
     ) -> BotResponse:
         """
         Full dispatch algorithm — never raises.
@@ -76,6 +77,10 @@ class Dispatcher:
             session_id=session_id,
             bot_id=bot_id,
         )
+
+        # Store sender_id in metadata so bots can verify ownership without Redis
+        if sender_id is not None:
+            context.metadata["sender_id"] = sender_id
 
         # 3. Append user turn
         context.history.append(Message(role="user", content=message))

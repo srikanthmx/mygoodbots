@@ -152,6 +152,11 @@ class MetaBot(BaseBot):
     async def _is_owner(self, context: SessionContext) -> bool:
         if OWNER_TELEGRAM_ID == 0:
             return True
+        # Check sender_id stored in session metadata by the dispatcher
+        sender_id = context.metadata.get("sender_id")
+        if sender_id is not None and int(sender_id) == OWNER_TELEGRAM_ID:
+            return True
+        # Fallback: Redis lookup (if available)
         if self._redis:
             try:
                 stored = await self._redis.get(f"sender:{context.session_id}")
