@@ -8,7 +8,7 @@ No Redis required — the app falls back to in-memory automatically.
 
 ## Prerequisites
 
-- GitHub account
+- GitHub account with your code pushed to a repository
 - [Render](https://render.com) account (free)
 - [Supabase](https://supabase.com) account (free)
 - [Vercel](https://vercel.com) account (free)
@@ -19,72 +19,119 @@ No Redis required — the app falls back to in-memory automatically.
 
 ## Step 1 — Push to GitHub
 
-1. Create a new GitHub repository (public or private)
-2. Push your code:
-   ```bash
-   git init
-   git add .
-   git commit -m "initial commit"
-   git remote add origin https://github.com/<your-username>/<your-repo>.git
-   git push -u origin main
-   ```
+```bash
+git init
+git add .
+git commit -m "initial commit"
+git remote add origin https://github.com/<your-username>/<your-repo>.git
+git push -u origin main
+```
 
 ---
 
 ## Step 2 — Set up Supabase (Postgres)
 
 1. Go to [supabase.com](https://supabase.com) → **New project**
-2. Choose a name, password, and region → **Create project** (takes ~2 min)
+2. Choose a name, set a strong database password, pick a region → **Create project** (takes ~2 min)
+   > Save the database password now — you'll need it in the connection string. If you lose it, reset it under **Project Settings → Database → Reset database password**
 3. Once ready, go to **SQL Editor** (left sidebar)
 4. Paste the contents of `migrations/001_initial.sql` and click **Run**
-5. Go to **Project Settings → Database → Connection string → URI**
-6. Copy the URI — it looks like:
+
+### Get the connection string
+
+5. At the top of your project page click **Connect**
+6. In the Connect panel, select the **Direct connection** tab
+   > Use Direct connection (not Session pooler) — this app uses `asyncpg` which manages its own connection pool
+7. Copy the URI — it looks like:
    ```
-   postgresql://postgres:[YOUR-PASSWORD]@db.[REF].supabase.co:5432/postgres
+   postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
    ```
-7. Append `?sslmode=require` to the end:
+   > If the password shows as `[YOUR-PASSWORD]`, replace it manually with the password you set in step 2
+8. Append `?sslmode=require` to the end:
    ```
-   postgresql://postgres:[YOUR-PASSWORD]@db.[REF].supabase.co:5432/postgres?sslmode=require
+   postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres?sslmode=require
    ```
-8. Save this — you'll need it in Step 3.
+9. If your password contains special characters (e.g. `@`, `#`, `!`), URL-encode them:
+   - `@` → `%40`
+   - `#` → `%23`
+   - `!` → `%21`
+
+   Example — password `MyP@ss` becomes:
+   ```
+   postgresql://postgres:MyP%40ss@db.[PROJECT-REF].supabase.co:5432/postgres?sslmode=require
+   ```
+10. Save this — you'll need it in Step 3.
 
 ---
 
-## Step 3 — Deploy Backend on Render
+## Step 3 — Create a GitHub Personal Access Token (for coding bot)
+
+The coding bot pushes AI-generated changes back to GitHub, which triggers Render to auto-redeploy. It needs a token to authenticate.
+
+1. Go to GitHub → top-right avatar → **Settings**
+2. Left sidebar → scroll to bottom → **Developer settings**
+3. **Personal access tokens → Fine-grained tokens**
+4. Click **Generate new token**
+5. Fill in:
+   - Token name: `render-deploy-bot`
+   - Expiration: 1 year (or no expiration)
+   - Repository access: **Only select repositories** → pick your repo
+   - Permissions: **Repository permissions → Contents → Read and write**
+6. Click **Generate token** — copy it immediately, it's shown only once
+7. Build your `GIT_REMOTE` value:
+   ```
+   https://<YOUR_TOKEN>@github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
+   ```
+   Example:
+   ```
+   https://github_pat_abc123xyz@github.com/johndoe/multi-bot-ai.git
+   ```
+8. Save this — you'll need it in Step 4.
+
+---
+
+## Step 4 — Deploy Backend on Render
 
 1. Go to [render.com](https://render.com) → **New → Web Service**
 2. Connect your GitHub account and select your repository
-3. Render will detect `render.yaml` automatically — confirm the settings
-4. Click **Create Web Service**
-5. Once created, go to the service **Environment** tab and add these variables:
+3. On the configuration screen, **change Language/Runtime to Docker** — Render may default to Python 3, but your app uses a Dockerfile so Docker must be selected
+   > If you don't see the option, go back and start **New → Web Service** again — pick **Docker** before proceeding
+4. Render will detect `render.yaml` automatically — confirm the settings
+5. Select the **Free** plan (512 MB RAM, 0.1 CPU, $0/month)
+6. Click **Create Web Service**
+7. Once created, go to the service **Environment** tab and add these variables:
 
-   | Key | Value |
-   |-----|-------|
-   | `DATABASE_URL` | Your Supabase URI from Step 2 |
-   | `OPENAI_API_KEY` | Your OpenAI API key |
-   | `TELEGRAM_TOKEN` | Your Telegram bot token |
-   | `TELEGRAM_GROUP_CHAT_ID` | Your Telegram group chat ID (e.g. `-1001234567890`) |
-   | `OWNER_TELEGRAM_ID` | Your personal Telegram user ID (get it from [@userinfobot](https://t.me/userinfobot)) |
-   | `NEWS_API_KEY` | Your [NewsAPI](https://newsapi.org) key (free tier) |
-   | `GIT_REMOTE` | `https://<GITHUB_TOKEN>@github.com/<user>/<repo>.git` (see note below) |
+```
+DATABASE_URL             postgresql://postgres:YOUR_PASSWORD@db.YOUR_REF.supabase.co:5432/postgres?sslmode=require
+OPENAI_API_KEY           your_groq_api_key
+OPENAI_BASE_URL          https://api.groq.com/openai/v1
+TELEGRAM_TOKEN           your_telegram_bot_token
+TELEGRAM_GROUP_CHAT_ID   your_group_chat_id
+OWNER_TELEGRAM_ID        your_telegram_user_id
+NEWS_API_KEY             your_newsapi_key
+GIT_REMOTE               https://YOUR_TOKEN@github.com/YOUR_USERNAME/YOUR_REPO.git
+GIT_BRANCH               main
+REPO_ROOT                /app
+APPROVAL_TTL_SECONDS     3600
+MAX_HISTORY              50
+LLM_MAX_RETRIES          3
+```
 
-   > **GIT_REMOTE note:** The coding bot pushes changes back to GitHub to trigger redeployment.
-   > Create a GitHub Personal Access Token with `repo` scope at
-   > GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens.
-   > Embed it in the URL: `https://ghp_yourtoken@github.com/youruser/yourrepo.git`
+   > `OPENAI_API_KEY` is your Groq key — get it free at [console.groq.com](https://console.groq.com). `OPENAI_BASE_URL` points to Groq's OpenAI-compatible endpoint. No Ollama needed on Render.
+   > `JWT_SECRET` and `TELEGRAM_WEBHOOK_SECRET` are auto-generated by Render from `render.yaml` — do not add them manually.
+   > Do not add `REDIS_URL` or `OLLAMA_BASE_URL` — neither is needed on Render.
 
-6. `JWT_SECRET` and `TELEGRAM_WEBHOOK_SECRET` are auto-generated by Render from `render.yaml` — no action needed.
-
-7. Wait for the first deploy to complete (3–5 min). Note your service URL:
+8. Click **Save Changes** — Render will trigger a deploy
+9. Wait for the deploy to complete (~3-5 min). Your service URL will be:
    ```
    https://<your-service-name>.onrender.com
    ```
 
 ---
 
-## Step 4 — Register Telegram Webhook
+## Step 5 — Register Telegram Webhook
 
-Once the backend is live, register the webhook so Telegram sends messages to your app.
+Once the backend is live, tell Telegram where to send messages.
 
 Open this URL in your browser (replace the placeholders):
 
@@ -92,7 +139,7 @@ Open this URL in your browser (replace the placeholders):
 https://api.telegram.org/bot<TELEGRAM_TOKEN>/setWebhook?url=https://<your-service-name>.onrender.com/webhook/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
 
-To find your `TELEGRAM_WEBHOOK_SECRET`, check the Render environment tab — it was auto-generated.
+To find your auto-generated `TELEGRAM_WEBHOOK_SECRET`, go to Render → your service → **Environment** tab.
 
 Verify it worked:
 ```
@@ -103,7 +150,7 @@ You should see `"url"` pointing to your Render service and `"pending_update_coun
 
 ---
 
-## Step 5 — Deploy Frontend on Vercel
+## Step 6 — Deploy Frontend on Vercel
 
 1. Before deploying, update `vercel.json` — replace `YOUR_RENDER_SERVICE` with your actual Render service name:
    ```json
@@ -121,7 +168,20 @@ Your frontend will be live at `https://<your-project>.vercel.app`
 
 ---
 
-## Step 6 — Verify Everything Works
+## Step 7 — Keep the Backend Warm (prevent cold starts)
+
+Render free tier spins down after 15 min of inactivity, causing ~30s cold starts.
+
+1. Go to [uptimerobot.com](https://uptimerobot.com) → create a free account
+2. **Add New Monitor**:
+   - Monitor type: **HTTP(s)**
+   - URL: `https://<your-service-name>.onrender.com/health`
+   - Monitoring interval: **5 minutes**
+3. Save — UptimeRobot will ping your service every 5 min keeping it alive
+
+---
+
+## Step 8 — Verify Everything Works
 
 1. Open your Vercel URL in a browser — you should see the chat UI
 2. In Telegram, send `/start` to your bot
@@ -130,7 +190,8 @@ Your frontend will be live at `https://<your-project>.vercel.app`
    /code write a hello world function in Python
    ```
 4. You should receive a diff proposal with an approve/reject prompt
-5. Check the Render logs (Dashboard → your service → Logs) if anything fails
+5. Approve it — the bot will commit and push to GitHub, Render will auto-redeploy
+6. Check Render logs (Dashboard → your service → Logs) if anything fails
 
 ---
 
@@ -151,26 +212,19 @@ You send:  /code <request>
 
 ---
 
-## Render Free Tier Notes
-
-- Services **spin down after 15 min of inactivity** — first request after idle takes ~30s (cold start)
-- 750 free instance hours/month — enough for one always-on service
-- To keep it warm, use a free uptime monitor like [UptimeRobot](https://uptimerobot.com) pinging `/health` every 5 min
-
----
-
 ## Environment Variables Reference
 
-See `.env.example` for the full list. Minimum required for production:
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `DATABASE_URL` | ✅ | Supabase URI with `?sslmode=require` |
-| `OPENAI_API_KEY` | ✅ | Or any OpenAI-compatible key |
-| `TELEGRAM_TOKEN` | ✅ | From @BotFather |
-| `JWT_SECRET` | ✅ | Auto-generated by Render |
-| `TELEGRAM_GROUP_CHAT_ID` | ✅ | Your group/channel ID |
-| `OWNER_TELEGRAM_ID` | ✅ | Your personal Telegram ID |
-| `GIT_REMOTE` | ✅ for coding bot | Token-embedded GitHub URL |
-| `NEWS_API_KEY` | optional | For news bot |
-| `REDIS_URL` | ❌ | Not needed — in-memory fallback used |
+| Variable | Required | Where to get it |
+|----------|----------|-----------------|
+| `DATABASE_URL` | ✅ | Supabase → Connect → Direct connection |
+| `OPENAI_API_KEY` | ✅ | [console.groq.com](https://console.groq.com) (free) |
+| `OPENAI_BASE_URL` | ✅ | `https://api.groq.com/openai/v1` |
+| `TELEGRAM_TOKEN` | ✅ | @BotFather on Telegram |
+| `TELEGRAM_GROUP_CHAT_ID` | ✅ | Add @userinfobot to your group |
+| `OWNER_TELEGRAM_ID` | ✅ | Message @userinfobot directly |
+| `NEWS_API_KEY` | optional | newsapi.org (free tier) |
+| `GIT_REMOTE` | ✅ for coding bot | GitHub fine-grained token (Step 3) |
+| `JWT_SECRET` | auto | Generated by Render |
+| `TELEGRAM_WEBHOOK_SECRET` | auto | Generated by Render |
+| `REDIS_URL` | ❌ skip | Not needed — in-memory fallback used |
+| `OLLAMA_BASE_URL` | ❌ skip | Not needed — Groq used via OPENAI_BASE_URL |
