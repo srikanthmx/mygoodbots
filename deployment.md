@@ -136,17 +136,24 @@ Once the backend is live, tell Telegram where to send messages.
 Open this URL in your browser (replace the placeholders):
 
 ```
-https://api.telegram.org/bot<TELEGRAM_TOKEN>/setWebhook?url=https://<your-service-name>.onrender.com/webhook/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
+https://api.telegram.org/bot<TELEGRAM_TOKEN>/setWebhook?url=https://mygoodbots.onrender.com/webhook/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
 
 To find your auto-generated `TELEGRAM_WEBHOOK_SECRET`, go to Render → your service → **Environment** tab.
+
+You should get back:
+```json
+{"ok":true,"result":true,"description":"Webhook was set"}
+```
 
 Verify it worked:
 ```
 https://api.telegram.org/bot<TELEGRAM_TOKEN>/getWebhookInfo
 ```
 
-You should see `"url"` pointing to your Render service and `"pending_update_count": 0`.
+You should see `"url": "https://mygoodbots.onrender.com/webhook/telegram"` and `"pending_update_count": 0`.
+
+Once confirmed, send `/start` to your bot on Telegram — it's live.
 
 ---
 
