@@ -247,7 +247,12 @@ async def telegram_webhook(request: Request) -> dict:
         except Exception as exc:
             logger.warning("Redis deduplication failed (non-fatal): %s", exc)
 
-    # 4. Parse update
+    # 4. Handle callback_query (approve/reject button taps)
+    if "callback_query" in body:
+        await _handle_callback_query(body["callback_query"])
+        return {"ok": True}
+
+    # 5. Parse regular message update
     if _telegram_handler is None:
         logger.warning("telegram_handler not configured; skipping update")
         return {"ok": True}
@@ -258,7 +263,7 @@ async def telegram_webhook(request: Request) -> dict:
         logger.warning("Failed to parse Telegram update: %s", exc)
         return {"ok": True}
 
-    # 5. Dispatch to the appropriate bot
+    # 6. Dispatch to the appropriate bot
     session_id = f"tg:{tg_message.chat_id}"
     # Store sender_id in Redis so CronBot can verify ownership
     if _redis_client and tg_message.sender_id:
@@ -277,12 +282,37 @@ async def telegram_webhook(request: Request) -> dict:
         logger.error("Dispatch error for Telegram update: %s", exc)
         return {"ok": True}
 
-    # 6. Send reply
+    # 7. Send reply
     reply_text = response.reply if not response.error else f"Error: {response.error}"
     try:
         await _telegram_handler.send_message(tg_message.chat_id, reply_text)
     except Exception as exc:
         logger.error("Failed to send Telegram reply: %s", exc)
 
-    # 7. Return ok
     return {"ok": True}
+
+
+async def _handle_callback_query(callback_query: dict) -> None:
+    """Process approve/reject button taps from Telegram inline keyboards."""
+    if _approval_gate is None or _telegram_handler is None:
+        return
+
+    data: str = callback_query.get("data", "")
+    chat_id: int = callback_query.get("message", {}).get("chat", {}).get("id", 0)
+    sender_id: int = callback_query.get("from", {}).get("id", 0)
+
+    try:
+        if data.startswith("approve:"):
+            approval_id = data.split(":", 1)[1]
+            await _approval_gate.approve(approval_id)
+            await _telegram_handler.send_message(chat_id, f"✅ Approved `{approval_id}` — deploying...")
+        elif data.startswith("reject:"):
+            approval_id = data.split(":", 1)[1]
+            await _approval_gate.reject(approval_id, "Rejected via Telegram")
+            await _telegram_handler.send_message(chat_id, f"❌ Rejected `{approval_id}`.")
+    except Exception as exc:
+        logger.error("Error handling callback_query %r: %s", data, exc)
+        try:
+            await _telegram_handler.send_message(chat_id, f"Error processing decision: {exc}")
+        except Exception:
+            pass

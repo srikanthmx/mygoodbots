@@ -86,7 +86,7 @@ database = Database(dsn=_env_required("DATABASE_URL", "postgresql://localhost/mu
 _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
 session_store = SessionStore(redis_url=_redis_url)
 
-# Approval gate
+# Approval gate — notifier is wired to Telegram after telegram_handler is created
 approval_gate = ApprovalGate(
     redis_url=_redis_url,
     ttl_seconds=_env_int("APPROVAL_TTL_SECONDS", 3600),
@@ -117,6 +117,44 @@ if _telegram_token:
         )
     except Exception as exc:
         logger.warning("Failed to initialise TelegramHandler: %s", exc)
+
+# Wire approval gate notifier → Telegram so the owner gets approve/reject buttons
+_owner_id_raw = _env("OWNER_TELEGRAM_ID")
+_owner_telegram_id: int | None = None
+if _owner_id_raw:
+    try:
+        _owner_telegram_id = int(_owner_id_raw)
+    except ValueError:
+        logger.warning("Invalid OWNER_TELEGRAM_ID=%r", _owner_id_raw)
+
+async def _approval_notifier(approval_id: str, message: str) -> None:
+    """Send approval proposals to the owner via Telegram with approve/reject buttons."""
+    if telegram_handler is None or _owner_telegram_id is None:
+        logger.info("ApprovalGate [%s]: %s", approval_id, message)
+        return
+    # If the message looks like a new proposal (contains a diff), send with buttons
+    if "Diff:" in message or "DIFF" in message or "\n---" in message or "\n+++" in message:
+        # Extract diff and summary from the stored proposal
+        try:
+            pending = await approval_gate.get_pending()
+            proposal = next((p for p in pending if p.approval_id == approval_id), None)
+            if proposal:
+                await telegram_handler.send_approval_notification(
+                    chat_id=_owner_telegram_id,
+                    diff=proposal.diff[:3000],  # Telegram message limit
+                    summary=proposal.summary,
+                    approval_id=approval_id,
+                )
+                return
+        except Exception as exc:
+            logger.warning("Could not send approval notification with buttons: %s", exc)
+    # Fallback: plain text notification
+    try:
+        await telegram_handler.send_message(_owner_telegram_id, message)
+    except Exception as exc:
+        logger.warning("Failed to send Telegram notification: %s", exc)
+
+approval_gate._notifier = _approval_notifier
 
 # Git deployer — applies approved diffs, commits, and pushes to trigger auto-deploy
 from backend.deployer import GitDeployer
